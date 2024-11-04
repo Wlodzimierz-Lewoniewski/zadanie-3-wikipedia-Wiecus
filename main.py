@@ -6,24 +6,24 @@ def extract_wikipedia_info(url):
     soup = BeautifulSoup(response.text, 'html.parser')
 
     internal_links = []
-    for a in soup.find_all('a', href=True):
-        if '/wiki/' in a['href'] and ':' not in a['href'] and len(internal_links) < 5:
-            internal_links.append((a.text, 'https://pl.wikipedia.org' + a['href']))
+    for a in soup.select('a[href^="/wiki/"]:not([href*=":"])'):
+        if len(internal_links) < 5:
+            internal_links.append((a.text.strip(), 'https://pl.wikipedia.org' + a['href']))
 
     image_urls = []
-    for img in soup.find_all('img', src=True):
+    for img in soup.select('img[src]'):
         if len(image_urls) < 3:
             image_urls.append('https:' + img['src'])
 
     external_links = []
-    for a in soup.find_all('a', href=True):
-        if 'http' in a['href'] and 'wikipedia.org' not in a['href'] and len(external_links) < 3:
+    for a in soup.select('a[href^="http"]:not([href*="wikipedia.org"])'):
+        if len(external_links) < 3:
             external_links.append(a['href'])
 
     categories = []
-    for a in soup.find_all('a', href=True):
-        if 'Kategorie:' in a['href'] and len(categories) < 3:
-            categories.append(a.text)
+    for a in soup.select('a[href*="/wiki/Kategoria:"]'):
+        if len(categories) < 3:
+            categories.append(a.text.strip())
 
     return internal_links, image_urls, external_links, categories
 
@@ -34,14 +34,10 @@ def main():
     soup = BeautifulSoup(response.text, 'html.parser')
 
     articles = []
-    for a in soup.find_all('a', href=True):
-        if '/wiki/' in a['href'] and ':' not in a['href']:
-            articles.append('https://pl.wikipedia.org' + a['href'])
-            print(f"Found article: {a['href']}")
+    for a in soup.select('a[href^="/wiki/"]:not([href*=":"])'):
+        articles.append('https://pl.wikipedia.org' + a['href'])
         if len(articles) == 2:
             break
-
-    print(f"Found articles: {articles}")
 
     for article_url in articles:
         internal_links, image_urls, external_links, categories = extract_wikipedia_info(article_url)
