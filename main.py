@@ -1,6 +1,11 @@
 import requests
 from bs4 import BeautifulSoup
 
+def get_wikipedia_search_results(query):
+    search_url = f"https://pl.wikipedia.org/w/api.php?action=query&list=search&srsearch={query}&format=json"
+    response = requests.get(search_url)
+    return response.json()
+
 def extract_wikipedia_info(url):
     response = requests.get(url)
     soup = BeautifulSoup(response.text, 'html.parser')
@@ -8,12 +13,18 @@ def extract_wikipedia_info(url):
     internal_links = []
     for a in soup.select('a[href^="/wiki/"]:not([href*=":"])'):
         if len(internal_links) < 5:
-            internal_links.append((a.text.strip(), 'https://pl.wikipedia.org' + a['href']))
+            link_text = a.text.strip()
+            link_url = 'https://pl.wikipedia.org' + a['href']
+            if link_text and link_url not in [link[1] for link in internal_links]:
+                internal_links.append((link_text, link_url))
 
     image_urls = []
-    for img in soup.select('img[src]'):
+    for img in soup.select('img'):
         if len(image_urls) < 3:
-            image_urls.append('https:' + img['src'])
+            img_src = img['src']
+            if not img_src.startswith('http'):
+                img_src = 'https:' + img_src
+            image_urls.append(img_src)
 
     external_links = []
     for a in soup.select('a[href^="http"]:not([href*="wikipedia.org"])'):
@@ -21,39 +32,36 @@ def extract_wikipedia_info(url):
             external_links.append(a['href'])
 
     categories = []
-    for a in soup.select('a[href*="/wiki/Kategoria:"]'):
+    for a in soup.select('div#mw-normal-catlinks ul li a'):
         if len(categories) < 3:
             categories.append(a.text.strip())
 
     return internal_links, image_urls, external_links, categories
 
 def main():
-    category = input("Podaj kategorię (np. Matematyka): ")
-    category_url = f'https://pl.wikipedia.org/wiki/Kategoria:{category.replace(" ", "_")}'
-    response = requests.get(category_url)
-    soup = BeautifulSoup(response.text, 'html.parser')
+    category = input("Podaj kategorię (np. Miasta na prawach powiatu): ")
+    search_results = get_wikipedia_search_results(category)
+    articles = [f"https://pl.wikipedia.org/wiki/{result['title'].replace(' ', '_')}" for result in search_results['query']['search'][:2]]
 
-    articles = []
-    for a in soup.select('a[href^="/wiki/"]:not([href*=":"])'):
-        articles.append('https://pl.wikipedia.org' + a['href'])
-        if len(articles) == 2:
-            break
+    if not articles:
+        print("No articles found.")
+        return
 
     for article_url in articles:
         internal_links, image_urls, external_links, categories = extract_wikipedia_info(article_url)
         print(f"Article URL: {article_url}")
         print("Internal Links:")
-        for link_text, link_url in internal_links:
-            print(f"  Text: {link_text}, URL: {link_url}")
+        internal_links_text = " | ".join(f"{link_text} | {link_url}" for link_text, link_url in internal_links)
+        print(internal_links_text if internal_links_text else "")
         print("Image URLs:")
-        for url in image_urls:
-            print(f"  {url}")
+        image_urls_text = " | ".join(image_urls)
+        print(image_urls_text if image_urls_text else "")
         print("External Links:")
-        for url in external_links:
-            print(f"  {url}")
+        external_links_text = " | ".join(external_links)
+        print(external_links_text if external_links_text else "")
         print("Categories:")
-        for category in categories:
-            print(f"  {category}")
+        categories_text = " | ".join(categories)
+        print(categories_text if categories_text else "")
         print("\n")
 
 if __name__ == '__main__':
