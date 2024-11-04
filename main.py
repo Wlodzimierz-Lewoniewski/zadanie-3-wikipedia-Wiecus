@@ -1,79 +1,64 @@
 import requests
 from bs4 import BeautifulSoup
-from urllib.parse import quote
 
+def extract_wikipedia_info(url):
+    response = requests.get(url)
+    soup = BeautifulSoup(response.text, 'html.parser')
 
-def get_category_articles(category_name):
-    encoded_name = quote(category_name.replace(' ', '_'))
-    url = f"https://pl.wikipedia.org/wiki/Kategoria:{encoded_name}"
-    print(f"Pobieranie URL kategorii: {url}")
-    html = requests.get(url).text
-    return html
-
-
-def extract_article_links(html):
-    soup = BeautifulSoup(html, "html.parser")
-    articles = []
-
+    internal_links = []
     for a in soup.find_all('a', href=True):
-        if a['href'].startswith('/wiki/') and not a['href'].startswith('/wiki/Kategoria:'):
-            articles.append((a.get_text(), a['href']))
-            if len(articles) >= 2:
-                break
+        if '/wiki/' in a['href'] and ':' not in a['href'] and len(internal_links) < 5:
+            internal_links.append((a.text, 'https://pl.wikipedia.org' + a['href']))
 
-    return articles
+    image_urls = []
+    for img in soup.find_all('img', src=True):
+        if len(image_urls) < 3:
+            image_urls.append('https:' + img['src'])
 
+    external_links = []
+    for a in soup.find_all('a', href=True):
+        if 'http' in a['href'] and 'wikipedia.org' not in a['href'] and len(external_links) < 3:
+            external_links.append(a['href'])
 
-def get_article_data(article_url):
-    full_url = f"https://pl.wikipedia.org{article_url}"
-    print(f"Pobieranie URL artykułu: {full_url}")
-    html = requests.get(full_url).text
-    return html, full_url
+    categories = []
+    for a in soup.find_all('a', href=True):
+        if 'Kategorie:' in a['href'] and len(categories) < 3:
+            categories.append(a.text)
 
+    return internal_links, image_urls, external_links, categories
 
-def extract_article_data(html):
-    soup = BeautifulSoup(html, "html.parser")
+def main():
+    category = input("Podaj kategorię (np. Matematyka): ")
+    category_url = f'https://pl.wikipedia.org/wiki/Kategoria:{category.replace(" ", "_")}'
+    response = requests.get(category_url)
+    soup = BeautifulSoup(response.text, 'html.parser')
 
-    links = [(a.get_text(), a['href']) for a in soup.find_all('a', href=True)
-             if a['href'].startswith('/wiki/')][:5]
+    articles = []
+    for a in soup.find_all('a', href=True):
+        if '/wiki/' in a['href'] and ':' not in a['href']:
+            articles.append('https://pl.wikipedia.org' + a['href'])
+            print(f"Found article: {a['href']}")
+        if len(articles) == 2:
+            break
 
-    images = [img['src'] for img in soup.find_all('img', src=True)][:3]
+    print(f"Found articles: {articles}")
 
-    external_links = [a['href'] for a in soup.find_all('a', href=True)
-                      if a['href'].startswith('http')][:3]
+    for article_url in articles:
+        internal_links, image_urls, external_links, categories = extract_wikipedia_info(article_url)
+        print(f"Article URL: {article_url}")
+        print("Internal Links:")
+        for link_text, link_url in internal_links:
+            print(f"  Text: {link_text}, URL: {link_url}")
+        print("Image URLs:")
+        for url in image_urls:
+            print(f"  {url}")
+        print("External Links:")
+        for url in external_links:
+            print(f"  {url}")
+        print("Categories:")
+        for category in categories:
+            print(f"  {category}")
+        print("\n")
 
-    categories = [a.get_text() for a in soup.find_all('a', href=True)
-                  if a['href'].startswith('/wiki/Kategoria:')][:3]
-
-    return {
-        "links": links,
-        "images": images,
-        "external_links": external_links,
-        "categories": categories
-    }
-
-
-category_name = input("Podaj nazwę kategorii na Wikipedii (np. Miasta na prawach powiatu): ")
-category_html = get_category_articles(category_name)
-
-articles = extract_article_links(category_html)
-
-for article in articles:
-    article_title, article_url = article
-    article_html, article_full_url = get_article_data(article_url)
-
-    data = extract_article_data(article_html)
-
-    print(f"Dane dla artykułu: {article_full_url}")
-
-    internal_links_output = ' | '.join([link[0] for link in data['links']]) if data['links'] else ''
-    print(f"Linki wewnętrzne: {internal_links_output}")
-
-    images_output = ' | '.join(data['images']) if data['images'] else ''
-    print(f"URL-e obrazków: {images_output}")
-
-    external_links_output = ' | '.join(data['external_links']) if data['external_links'] else ''
-    print(f"Zewnętrzne linki: {external_links_output}")
-
-    categories_output = ' | '.join(data['categories']) if data['categories'] else ''
-    print(f"Kategorie: {categories_output}\n")
+if __name__ == '__main__':
+    main()
