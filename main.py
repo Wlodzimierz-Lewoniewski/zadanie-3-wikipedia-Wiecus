@@ -1,71 +1,65 @@
 import requests
 from bs4 import BeautifulSoup
+import html
 
 
-def fetch_article_data(article_url):
-    response = requests.get(article_url)
-    response.raise_for_status()
-    soup = BeautifulSoup(response.content, 'html.parser')
+def wiki_article(name):
+    url = f'https://pl.wikipedia.org{name}'
+    response = requests.get(url)
 
-    internal_links = []
-    for a in soup.select('a[href^="/wiki/"]'):
-        if len(internal_links) < 5 and "Kategoria:" not in a['href']:
-            internal_links.append(f"{a.text} | https://pl.wikipedia.org{a['href']}")
+    if response.status_code == 200:
+        html_content = response.text
+        content = []
+        soup = BeautifulSoup(html_content, 'html.parser')
+        main_div = soup.find("div", class_="mw-body-content")
 
-    images = []
-    for img in soup.select('img'):
-        if len(images) < 3:
-            images.append(f"https://upload.wikimedia.org{img['src']}")
+        internal_links = [a['title'] for a in main_div.find_all('a', href=True)
+                          if a['href'].startswith('/wiki/') and ':' not in a['href'][6:]][:5]
 
-    external_links = []
-    for a in soup.select('a.external'):
-        if len(external_links) < 3:
-            external_links.append(a['href'])
+        content.append(" | ".join(internal_links))
 
-    categories = []
-    for a in soup.select('a[title^="Kategoria:"]'):
-        if len(categories) < 3:
-            categories.append(a.text)
+        image_urls = [img["src"] for img in main_div.find_all("img") if '/wiki/' not in img['src']][:3]
+        content.append(" | ".join(image_urls) if image_urls else "")
 
-    return {
-        'internal_links': internal_links,
-        'images': images,
-        'external_links': external_links,
-        'categories': categories
-    }
+        refs_div = soup.find("div", class_="mw-references-wrap mw-references-columns") or \
+                   soup.find("div", class_="do-not-make-smaller refsection")
+
+        if refs_div:
+            refs = refs_div.find_all("li")
+            external_refs = [html.escape(a['href']) for ref in refs
+                             for span in ref.find_all("span", class_="reference-text")
+                             for a in span.find_all("a", href=True) if "http" in a['href']][:3]
+            content.append(" | ".join(external_refs))
+        else:
+            content.append("")
+
+        category_div = soup.find("div", class_="mw-normal-catlinks")
+        category_list = [cat.text.strip() for cat in category_div.find('ul').find_all("a")[:3]]
+        content.append(" | ".join(category_list))
+
+        return content
+    else:
+        print("Błąd podczas pobierania strony:", response.status_code)
 
 
 def main():
-    search_query = input("Podaj kategorię (np. 'Miasta na prawach powiatu'): ")
-    category_url = f"https://pl.wikipedia.org/wiki/Kategoria:{requests.utils.quote(search_query)}"
+    term = input().replace(" ", '_')
+    base_url = 'https://pl.wikipedia.org/wiki/Kategoria:'
+    url = base_url + term
+    response = requests.get(url)
 
-    response = requests.get(category_url)
-    response.raise_for_status()
-    soup = BeautifulSoup(response.content, 'html.parser')
+    if response.status_code == 200:
+        html_content = response.text
+        soup = BeautifulSoup(html_content, 'html.parser')
 
-    article_links = soup.select('.mw-category-group a')[:2]
+        main_div = soup.find("div", class_="mw-category mw-category-columns")
+        links = [link["href"] for link in main_div.find_all("a")[:2]]
 
-    if not article_links:
-        print("Nie znaleziono artykułów w tej kategorii.")
-        return
-
-    for article_link in article_links:
-        article_url = f"https://pl.wikipedia.org{article_link['href']}"
-        article_data = fetch_article_data(article_url)
-
-        output_lines = []
-        output_lines.append(f"Article URL: {article_url}")
-        output_lines.append(
-            "Internal Links:\n" + "\n".join(article_data['internal_links']) if article_data['internal_links'] else "")
-        output_lines.append("Image URLs:\n" + "\n".join(article_data['images']) if article_data['images'] else "")
-        output_lines.append(
-            "External Links:\n" + "\n".join(article_data['external_links']) if article_data['external_links'] else "")
-        output_lines.append(
-            "Categories:\n" + "\n".join(article_data['categories']) if article_data['categories'] else "")
-
-        print("\n".join(output_lines))
-        print("\n" + "-" * 40 + "\n")  # Separator between articles
+        for link in links:
+            for detail in wiki_article(link):
+                print(detail)
+    else:
+        print("Błąd podczas pobierania strony:", response.status_code)
 
 
-if __name__ == "__main__":
-    main()
+main()
